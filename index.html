@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Daftar Hadir Kegiatan - 3D Creative</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Signature Pad -->
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.5/dist/signature_pad.umd.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        /* Tampilan Print Rekap A4 */
+        @media print {
+            body * { visibility: hidden; }
+            #rekap-print-area, #rekap-print-area * { visibility: visible; }
+            #rekap-print-area { position: absolute; left: 0; top: 0; width: 100%; background: white; margin: 0; padding: 20px;}
+            .no-print { display: none !important; }
+            .print-table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px;}
+            .print-table th, .print-table td { border: 1px solid black; padding: 8px; text-align: left; }
+            .ttd-img { max-height: 40px; display: block; margin: 0 auto; }
+            @page { size: A4 portrait; margin: 1cm; }
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .signature-canvas { border: 1px solid #e2e8f0; border-radius: 0.5rem; width: 100%; height: 150px; background: white;}
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden text-gray-800">
+
+    <!-- Konfigurasi URL Google Apps Script -->
+    <script>
+        // MASUKKAN URL GOOGLE APPS SCRIPT ANDA DI BAWAH INI
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbx7OrxmpNFMfkFSLCIoC6EcgYvNMHETcpKpTFJmTUglv5RCzoLejCrurkdGv3001SqBEw/exec"; 
+        
+        let appData = {
+            password: "",
+            settings: {},
+            formHeaders: []
+        };
+        let signaturePad;
+        let isEditingId = "";
+    </script>
+
+    <!-- Sidebar Menu -->
+    <aside class="w-64 bg-blue-900 text-white flex flex-col shadow-xl transition-all duration-300 md:relative absolute z-50 h-full no-print" id="sidebar">
+        <div class="p-6 border-b border-blue-800 flex justify-between items-center">
+            <h1 class="text-xl font-bold tracking-wider"><i class="fas fa-clipboard-check mr-2"></i> HadirApp</h1>
+            <button class="md:hidden text-white" onclick="toggleSidebar()"><i class="fas fa-times"></i></button>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <button onclick="navigate('daftar-hadir')" class="w-full flex items-center p-3 rounded-lg hover:bg-blue-800 transition text-left" id="menu-daftar-hadir">
+                <i class="fas fa-user-edit w-6"></i> Isi Daftar Hadir
+            </button>
+            <button onclick="checkAuth('rekap')" class="w-full flex items-center p-3 rounded-lg hover:bg-blue-800 transition text-left" id="menu-rekap">
+                <i class="fas fa-table w-6"></i> Rekap Data
+            </button>
+            <button onclick="checkAuth('pengaturan')" class="w-full flex items-center p-3 rounded-lg hover:bg-blue-800 transition text-left" id="menu-pengaturan">
+                <i class="fas fa-cog w-6"></i> Pengaturan
+            </button>
+        </nav>
+        <div class="p-4 text-xs text-center border-t border-blue-800 text-blue-300">
+            &copy; 2026 3D Creative<br>Hak Cipta Dilindungi
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-screen overflow-y-auto w-full relative">
+        
+        <!-- Mobile Header -->
+        <header class="bg-white shadow-sm p-4 flex justify-between items-center md:hidden no-print">
+            <h2 class="font-bold text-gray-700">Aplikasi Daftar Hadir</h2>
+            <button onclick="toggleSidebar()" class="text-gray-600 focus:outline-none"><i class="fas fa-bars text-xl"></i></button>
+        </header>
+
+        <!-- Container Halaman -->
+        <div class="p-4 md:p-8 flex-1" id="main-container">
+            
+            <!-- Halaman: Daftar Hadir -->
+            <section id="page-daftar-hadir" class="max-w-3xl mx-auto bg-white p-6 md:p-10 rounded-2xl shadow-lg border border-gray-100 hidden">
+                <div class="text-center mb-8 border-b pb-6">
+                    <h2 class="text-3xl font-bold text-gray-800 uppercase tracking-wide" id="judul-kegiatan">Memuat...</h2>
+                    <p class="text-gray-500 mt-2"><i class="fas fa-calendar-alt"></i> <span id="info-waktu">...</span> | <i class="fas fa-map-marker-alt"></i> <span id="info-tempat">...</span></p>
+                </div>
+
+                <!-- Notif Mode Edit -->
+                <div id="edit-notice" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-r-lg">
+                    <div class="flex">
+                        <div class="flex-shrink-0"><i class="fas fa-exclamation-triangle text-yellow-400"></i></div>
+                        <div class="ml-3"><p class="text-sm text-yellow-700">Anda sedang dalam mode Edit Data. <button onclick="cancelEdit()" class="font-bold underline">Batal Edit</button></p></div>
+                    </div>
+                </div>
+
+                <form id="dynamic-form" onsubmit="submitForm(event)" class="space-y-6">
+                    <div id="form-fields" class="space-y-4">
+                        <!-- Input forms will be injected here by JS -->
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md flex justify-center items-center">
+                        <i class="fas fa-paper-plane mr-2"></i> Simpan Daftar Hadir
+                    </button>
+                </form>
+            </section>
+
+            <!-- Halaman: Pengaturan -->
+            <section id="page-pengaturan" class="max-w-4xl mx-auto bg-white p-6 md:p-10 rounded-2xl shadow-lg border border-gray-100 hidden">
+                <div class="mb-6 pb-4 border-b">
+                    <h2 class="text-2xl font-bold text-gray-800"><i class="fas fa-cogs mr-2 text-blue-600"></i> Pengaturan Aplikasi</h2>
+                    <p class="text-gray-500 text-sm mt-1">Ubah identitas acara dan sekolah untuk format cetak.</p>
+                </div>
+                
+                <form id="form-pengaturan" onsubmit="saveSettings(event)" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Sekolah</label><input type="text" id="set-Nama Sekolah" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Alamat Sekolah</label><input type="text" id="set-Alamat Sekolah" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Kegiatan</label><input type="text" id="set-Nama Kegiatan" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Kegiatan</label><input type="date" id="set-Tanggal Kegiatan" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Waktu Kegiatan</label><input type="text" id="set-Waktu Kegiatan" placeholder="Misal: 08.00 - Selesai" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Tempat Kegiatan</label><input type="text" id="set-Tempat Kegiatan" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div class="col-span-1 md:col-span-2 mt-4 pt-4 border-t"><h3 class="font-bold text-gray-700 mb-4">Pengaturan Pengesahan Cetak</h3></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Kota Cetak</label><input type="text" id="set-Kota Cetak" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Cetak</label><input type="date" id="set-Tanggal Cetak" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Kepala Sekolah</label><input type="text" id="set-Nama Kepsek" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">NIP Kepala Sekolah</label><input type="text" id="set-NIP Kepsek" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required></div>
+                    
+                    <div class="col-span-1 md:col-span-2 mt-4">
+                        <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl transition duration-200 shadow-md">
+                            <i class="fas fa-save mr-2"></i> Simpan Pengaturan
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Halaman: Rekap Data -->
+            <section id="page-rekap" class="bg-white rounded-2xl shadow-lg border border-gray-100 hidden relative">
+                
+                <!-- Toolbar Area -->
+                <div class="p-6 border-b flex flex-col md:flex-row justify-between items-center bg-gray-50 rounded-t-2xl no-print">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800"><i class="fas fa-list-alt mr-2 text-blue-600"></i> Rekap Daftar Hadir</h2>
+                        <p class="text-gray-500 text-sm mt-1">Pratinjau data dan cetak laporan formal.</p>
+                    </div>
+                    <div class="mt-4 md:mt-0 space-x-2">
+                        <button onclick="loadRekapData()" class="bg-blue-100 hover:bg-blue-200 text-blue-800 py-2 px-4 rounded-lg font-medium transition"><i class="fas fa-sync-alt"></i> Muat Ulang</button>
+                        <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white py-2 px-4 rounded-lg font-medium transition shadow-md"><i class="fas fa-print mr-2"></i> Cetak / PDF</button>
+                    </div>
+                </div>
+
+                <!-- Print Area A4 -->
+                <div id="rekap-print-area" class="p-8 overflow-x-auto">
+                    <!-- KOP SURAT FORMAL -->
+                    <div class="text-center border-b-[3px] border-black pb-4 mb-6">
+                        <h1 class="text-2xl font-bold uppercase tracking-wider" id="kop-sekolah">NAMA SEKOLAH</h1>
+                        <p class="text-sm mt-1" id="kop-alamat">Alamat Sekolah Lengkap</p>
+                    </div>
+
+                    <!-- Judul Laporan -->
+                    <div class="text-center mb-6">
+                        <h2 class="text-xl font-bold uppercase underline">DAFTAR HADIR PESERTA</h2>
+                    </div>
+
+                    <!-- Info Kegiatan -->
+                    <div class="mb-6">
+                        <table class="text-sm">
+                            <tr><td class="w-32 font-medium">Kegiatan</td><td class="w-4">:</td><td class="font-bold" id="lap-kegiatan">-</td></tr>
+                            <tr><td class="font-medium">Hari/Tanggal</td><td>:</td><td id="lap-tanggal">-</td></tr>
+                            <tr><td class="font-medium">Waktu</td><td>:</td><td id="lap-waktu">-</td></tr>
+                            <tr><td class="font-medium">Tempat</td><td>:</td><td id="lap-tempat">-</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- Tabel Data -->
+                    <div class="w-full">
+                        <table class="print-table min-w-full" id="tabel-rekap">
+                            <thead class="bg-gray-100 font-bold" id="tabel-rekap-head">
+                                <!-- Headers injected here -->
+                            </thead>
+                            <tbody id="tabel-rekap-body">
+                                <!-- Data injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pengesahan -->
+                    <div class="mt-12 flex justify-end">
+                        <div class="text-center w-auto min-w-[250px] text-sm">
+                            <p class="mb-1"><span id="lap-kota">Kota</span>, <span id="lap-tgl-cetak">Tanggal</span></p>
+                            <p class="mb-20 font-bold">Kepala Sekolah,</p>
+                            <p class="font-bold underline whitespace-nowrap" id="lap-kepsek">NAMA KEPSEK</p>
+                            <p>NIP. <span id="lap-nip">NIP</span></p>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+        </div>
+    </main>
+
+    <script>
+        // Init Aplikasi
+        document.addEventListener('DOMContentLoaded', () => {
+            // Sembunyikan sidebar di mobile saat awal
+            if(window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+            }
+            fetchInitData();
+        });
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('-translate-x-full');
+        }
+
+        // --- CORE API FUNCTIONS ---
+        async function fetchInitData() {
+            showLoading("Memuat sistem dan pengaturan...");
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'getInitData' })
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    appData = result;
+                    applySettingsToUI();
+                    buildForm(result.formHeaders);
+                    Swal.close();
+                    navigate('daftar-hadir'); // Default page
+                } else {
+                    showError("Gagal memuat data dari database.");
+                }
+            } catch (error) {
+                showError("Gagal terhubung ke server. Pastikan URL Web App benar.");
+                console.error(error);
+            }
+        }
+
+        // --- UI & LOGIC FUNCTIONS ---
+        function applySettingsToUI() {
+            const s = appData.settings;
+            // Untuk Halaman Utama
+            document.getElementById('judul-kegiatan').innerText = s['Nama Kegiatan'] || "Daftar Hadir";
+            const formattedDate = s['Tanggal Kegiatan'] ? new Date(s['Tanggal Kegiatan']).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : "";
+            document.getElementById('info-waktu').innerText = formattedDate + ' | ' + (s['Waktu Kegiatan'] || "");
+            document.getElementById('info-tempat').innerText = s['Tempat Kegiatan'] || "";
+
+            // Untuk Form Pengaturan (Isi value input)
+            Object.keys(s).forEach(key => {
+                const el = document.getElementById('set-' + key);
+                if(el) {
+                    if(el.type === 'date' && s[key]) {
+                        el.value = new Date(s[key]).toISOString().split('T')[0];
+                    } else {
+                        el.value = s[key];
+                    }
+                }
+            });
+
+            // Untuk Laporan Cetak
+            document.getElementById('kop-sekolah').innerText = s['Nama Sekolah'] || "NAMA SEKOLAH";
+            document.getElementById('kop-alamat').innerText = s['Alamat Sekolah'] || "-";
+            document.getElementById('lap-kegiatan').innerText = s['Nama Kegiatan'] || "-";
+            document.getElementById('lap-tanggal').innerText = formattedDate || "-";
+            document.getElementById('lap-waktu').innerText = s['Waktu Kegiatan'] || "-";
+            document.getElementById('lap-tempat').innerText = s['Tempat Kegiatan'] || "-";
+            document.getElementById('lap-kota').innerText = s['Kota Cetak'] || "-";
+            
+            const cetakDate = s['Tanggal Cetak'] ? new Date(s['Tanggal Cetak']).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) : "-";
+            document.getElementById('lap-tgl-cetak').innerText = cetakDate;
+            document.getElementById('lap-kepsek').innerText = s['Nama Kepsek'] || "NAMA KEPALA SEKOLAH";
+            document.getElementById('lap-nip').innerText = s['NIP Kepsek'] || "-";
+        }
+
+        function buildForm(headers) {
+            const container = document.getElementById('form-fields');
+            container.innerHTML = ''; // Bersihkan
+
+            headers.forEach(header => {
+                if(header === 'ID') return; // Lewati kolom ID (dihandle internal)
+                
+                const isSignature = header.toLowerCase().includes('tanda tangan') || header.toLowerCase().includes('signature');
+                
+                const div = document.createElement('div');
+                const label = document.createElement('label');
+                label.className = "block text-sm font-semibold text-gray-700 mb-2";
+                label.innerText = header;
+                div.appendChild(label);
+
+                if (isSignature) {
+                    const canvasContainer = document.createElement('div');
+                    canvasContainer.className = "relative";
+                    const canvas = document.createElement('canvas');
+                    canvas.id = "signature-pad";
+                    canvas.className = "signature-canvas";
+                    
+                    const clearBtn = document.createElement('button');
+                    clearBtn.type = "button";
+                    clearBtn.innerText = "Hapus Tanda Tangan";
+                    clearBtn.className = "text-xs text-red-500 mt-1 hover:underline absolute top-2 right-2 bg-white px-2 py-1 rounded border shadow-sm";
+                    
+                    canvasContainer.appendChild(canvas);
+                    canvasContainer.appendChild(clearBtn);
+                    div.appendChild(canvasContainer);
+                    
+                    // Init pad setelah elemen ada di DOM
+                    setTimeout(() => {
+                        const c = document.getElementById('signature-pad');
+                        // Menyesuaikan resolusi internal canvas
+                        c.width = c.offsetWidth;
+                        c.height = c.offsetHeight;
+                        signaturePad = new SignaturePad(c, { penColor: "rgb(0, 0, 0)" });
+                        clearBtn.onclick = () => signaturePad.clear();
+                    }, 100);
+
+                } else {
+                    const input = document.createElement('input');
+                    input.type = "text";
+                    input.className = "w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition";
+                    input.id = "input-" + header;
+                    input.required = true;
+                    input.placeholder = "Masukkan " + header;
+                    div.appendChild(input);
+                }
+                container.appendChild(div);
+            });
+        }
+
+        async function submitForm(e) {
+            e.preventDefault();
+            
+            let payload = {};
+            // Set ID: Jika edit pakai isEditingId, jika tidak, kosong (GAS akan buat baru)
+            payload['ID'] = isEditingId; 
+
+            let hasSignatureField = false;
+            let isSignatureEmpty = false;
+
+            appData.formHeaders.forEach(header => {
+                if(header === 'ID') return;
+                const isSignature = header.toLowerCase().includes('tanda tangan');
+                
+                if(isSignature) {
+                    hasSignatureField = true;
+                    if(signaturePad.isEmpty()) {
+                        isSignatureEmpty = true;
+                    } else {
+                        payload[header] = signaturePad.toDataURL(); // Base64
+                    }
+                } else {
+                    let inputValue = document.getElementById("input-" + header).value;
+                    
+                    // Mencegah Google Sheets menghilangkan angka 0 di depan (khususnya untuk No WA)
+                    // Jika input hanya berisi angka, diawali '0', dan panjangnya minimal 6 digit
+                    if (/^0[0-9]{5,}$/.test(inputValue)) {
+                        inputValue = "'" + inputValue;
+                    }
+                    
+                    payload[header] = inputValue;
+                }
+            });
+
+            if(hasSignatureField && isSignatureEmpty) {
+                Swal.fire('Peringatan', 'Tanda tangan wajib diisi!', 'warning');
+                return;
+            }
+
+            showLoading("Menyimpan data...");
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'saveAttendance', payload: payload })
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    Swal.fire({ title: 'Berhasil!', text: 'Data kehadiran telah disimpan.', icon: 'success', confirmButtonColor: '#2563eb' });
+                    e.target.reset();
+                    if(signaturePad) signaturePad.clear();
+                    cancelEdit(); // Reset status edit jika ada
+                } else {
+                    showError("Gagal menyimpan data.");
+                }
+            } catch (error) {
+                showError("Terjadi kesalahan koneksi.");
+            }
+        }
+
+        async function saveSettings(e) {
+            e.preventDefault();
+            
+            // Perbarui memori lokal
+            Object.keys(appData.settings).forEach(key => {
+                appData.settings[key] = document.getElementById('set-' + key).value;
+            });
+
+            // Sesuaikan key payload dengan yang ada di Google Apps Script (GAS) agar tidak perlu update script GAS
+            let payload = {
+                namaSekolah: document.getElementById('set-Nama Sekolah').value,
+                alamatSekolah: document.getElementById('set-Alamat Sekolah').value,
+                namaKegiatan: document.getElementById('set-Nama Kegiatan').value,
+                tanggalKegiatan: document.getElementById('set-Tanggal Kegiatan').value,
+                waktuKegiatan: document.getElementById('set-Waktu Kegiatan').value,
+                tempatKegiatan: document.getElementById('set-Tempat Kegiatan').value,
+                kotaCetak: document.getElementById('set-Kota Cetak').value,
+                tanggalCetak: document.getElementById('set-Tanggal Cetak').value,
+                namaKepsek: document.getElementById('set-Nama Kepsek').value,
+                nipKepsek: document.getElementById('set-NIP Kepsek').value
+            };
+
+            showLoading("Memperbarui pengaturan...");
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'saveSettings', payload: payload })
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    applySettingsToUI();
+                    Swal.fire('Berhasil!', 'Pengaturan berhasil diperbarui.', 'success');
+                }
+            } catch (error) {
+                showError("Gagal menyimpan pengaturan.");
+            }
+        }
+
+        async function loadRekapData() {
+            showLoading("Memuat data rekapan...");
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'getAttendance' })
+                });
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    renderTable(result.headers, result.data);
+                    Swal.close();
+                } else {
+                    showError("Gagal memuat data rekapan.");
+                }
+            } catch (error) {
+                showError("Terjadi kesalahan koneksi.");
+            }
+        }
+
+        function renderTable(headers, data) {
+            const thead = document.getElementById('tabel-rekap-head');
+            const tbody = document.getElementById('tabel-rekap-body');
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+
+            // Header Row
+            const trHead = document.createElement('tr');
+            const thNo = document.createElement('th');
+            thNo.innerText = "No";
+            thNo.className = "w-10 text-center";
+            trHead.appendChild(thNo);
+
+            const displayHeaders = headers.filter(h => h !== 'ID'); // Jangan tampilkan ID
+            displayHeaders.forEach(h => {
+                const th = document.createElement('th');
+                th.innerText = h;
+                // Batasi lebar kolom tanda tangan agar proporsional
+                if(h.toLowerCase().includes('tanda tangan')) {
+                    th.className = "w-28 text-center";
+                }
+                trHead.appendChild(th);
+            });
+            // Kolom Aksi (hanya tampil di layar, disembunyikan saat print via CSS)
+            const thAksi = document.createElement('th');
+            thAksi.innerText = "Aksi";
+            thAksi.className = "text-center no-print w-24";
+            trHead.appendChild(thAksi);
+            thead.appendChild(trHead);
+
+            // Data Rows
+            if(data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${displayHeaders.length + 2}" class="text-center p-4">Belum ada data kehadiran.</td></tr>`;
+                return;
+            }
+
+            data.forEach((row, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-gray-50";
+                
+                const tdNo = document.createElement('td');
+                tdNo.innerText = index + 1;
+                tdNo.className = "text-center";
+                tr.appendChild(tdNo);
+
+                displayHeaders.forEach(h => {
+                    const td = document.createElement('td');
+                    const isSignature = h.toLowerCase().includes('tanda tangan');
+                    
+                    if(isSignature) {
+                        td.className = "text-center align-middle";
+                        if(row[h]) {
+                            td.innerHTML = `<img src="${row[h]}" class="ttd-img" alt="Tanda Tangan">`;
+                        }
+                    } else {
+                        let cellValue = row[h] || "";
+                        
+                        // Bersihkan tanda petik tunggal jika terbawa dari format teks spreadsheet
+                        if (typeof cellValue === 'string' && cellValue.startsWith("'")) {
+                            cellValue = cellValue.substring(1);
+                        }
+                        
+                        td.innerText = cellValue;
+                    }
+                    tr.appendChild(td);
+                });
+
+                // Aksi Buttons
+                const tdAksi = document.createElement('td');
+                tdAksi.className = "text-center no-print space-x-2";
+                
+                const btnEdit = document.createElement('button');
+                btnEdit.innerHTML = `<i class="fas fa-edit"></i>`;
+                btnEdit.className = "text-blue-500 hover:text-blue-700 p-1";
+                btnEdit.title = "Edit Data";
+                // Mengkonversi row object ke string agar aman masuk onclick function
+                btnEdit.onclick = () => startEdit(row);
+                
+                const btnDel = document.createElement('button');
+                btnDel.innerHTML = `<i class="fas fa-trash"></i>`;
+                btnDel.className = "text-red-500 hover:text-red-700 p-1";
+                btnDel.title = "Hapus Data";
+                btnDel.onclick = () => deleteData(row['ID']);
+
+                tdAksi.appendChild(btnEdit);
+                tdAksi.appendChild(btnDel);
+                tr.appendChild(tdAksi);
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        function startEdit(rowData) {
+            isEditingId = rowData['ID'];
+            navigate('daftar-hadir'); // Pindah ke halaman form
+            document.getElementById('edit-notice').classList.remove('hidden'); // Tampilkan notif edit
+
+            // Isi form
+            appData.formHeaders.forEach(header => {
+                if(header === 'ID') return;
+                const isSignature = header.toLowerCase().includes('tanda tangan');
+                
+                if(isSignature) {
+                    // Jika ttd sudah ada base64, gambar ulang di canvas
+                    if(rowData[header] && signaturePad) {
+                        signaturePad.fromDataURL(rowData[header]);
+                    }
+                } else {
+                    const inputEl = document.getElementById("input-" + header);
+                    let cellValue = rowData[header] || "";
+                    
+                    // Bersihkan tanda petik tunggal jika ada untuk saat form edit dimuat ulang
+                    if (typeof cellValue === 'string' && cellValue.startsWith("'")) {
+                        cellValue = cellValue.substring(1);
+                    }
+                    
+                    if(inputEl) inputEl.value = cellValue;
+                }
+            });
+            window.scrollTo(0,0);
+        }
+
+        function cancelEdit() {
+            isEditingId = "";
+            document.getElementById('edit-notice').classList.add('hidden');
+            document.getElementById('dynamic-form').reset();
+            if(signaturePad) signaturePad.clear();
+        }
+
+        async function deleteData(id) {
+            const confirm = await Swal.fire({
+                title: 'Hapus Data?',
+                text: "Data yang dihapus tidak dapat dikembalikan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'Ya, Hapus!'
+            });
+
+            if (confirm.isConfirmed) {
+                showLoading("Menghapus data...");
+                try {
+                    const response = await fetch(GAS_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'deleteAttendance', payload: { ID: id } })
+                    });
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
+                        loadRekapData(); // reload tabel
+                    }
+                } catch (error) {
+                    showError("Gagal menghapus data.");
+                }
+            }
+        }
+
+        // --- NAVIGATION & AUTH ---
+        function navigate(pageId) {
+            // Sembunyikan semua halaman
+            document.getElementById('page-daftar-hadir').classList.add('hidden');
+            document.getElementById('page-pengaturan').classList.add('hidden');
+            document.getElementById('page-rekap').classList.add('hidden');
+            
+            // Tampilkan yang dipilih
+            document.getElementById('page-' + pageId).classList.remove('hidden');
+
+            // Tutup sidebar di mobile
+            if(window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+            }
+
+            // Jika masuk rekap, langsung load data
+            if(pageId === 'rekap') {
+                loadRekapData();
+            }
+        }
+
+        async function checkAuth(targetPage) {
+            // Meminta password menggunakan SweetAlert
+            const { value: password } = await Swal.fire({
+                title: 'Masukkan Password',
+                input: 'password',
+                inputLabel: 'Halaman ini khusus Admin',
+                inputPlaceholder: 'Password',
+                inputAttributes: {
+                    autocapitalize: 'off',
+                    autocorrect: 'off'
+                },
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb'
+            });
+
+            if (password) {
+                if(password === appData.password) {
+                    navigate(targetPage);
+                } else {
+                    Swal.fire('Akses Ditolak', 'Password yang Anda masukkan salah!', 'error');
+                }
+            }
+        }
+
+        // --- UTILS ---
+        function showLoading(msg) {
+            Swal.fire({
+                title: msg,
+                allowEscapeKey: false,
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading() }
+            });
+        }
+
+        function showError(msg) {
+            Swal.fire({ icon: 'error', title: 'Oops...', text: msg });
+        }
+    </script>
+</body>
+</html>
